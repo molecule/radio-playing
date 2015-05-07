@@ -52,22 +52,25 @@ const char* role_friendly_name[] = { "invalid", "Ping out", "Pong back"};
 // The role of the current running sketch
 role_e role = role_pong_back;
 
-void setup(void)
-{
-  //
-  // Print preamble
-  //
+// set pin numbers:
+const int buttonPin = 2;     // the number of the pushbutton pin
+const int ledPin =  13;      // the number of the LED pin
+int buttonState = 0;         // variable for reading the pushbutton status
 
+void setup(void) {
+  // Print preamble
   Serial.begin(57600);
   printf_begin();
   printf("\n\rRF24/examples/GettingStarted/\n\r");
   printf("ROLE: %s\n\r",role_friendly_name[role]);
   printf("*** PRESS 'T' to begin transmitting to the other node\n\r");
+  
+  // initialize the pushbutton pin as an input:
+  pinMode(buttonPin, INPUT);
+  // initialize the LED pin as an output:
+  pinMode(ledPin, OUTPUT); 
 
-  //
   // Setup and configure rf radio
-  //
-
   radio.begin();
 
   // optionally, increase the delay between retries & # of retries
@@ -77,9 +80,7 @@ void setup(void)
   // improve reliability
   //radio.setPayloadSize(8);
 
-  //
   // Open pipes to other nodes for communication
-  //
 
   // This simple sketch opens two pipes for these two nodes to communicate
   // back and forth.
@@ -97,112 +98,37 @@ void setup(void)
     //radio.openReadingPipe(1,pipes[0]);
   }
 
-  //
   // Start listening
-  //
-
   radio.startListening();
 
-  //
   // Dump the configuration of the rf unit for debugging
-  //
-
   radio.printDetails();
 }
 
-void loop(void)
-{
-  //
+void loop(void) {
+  
+  // read the state of the pushbutton value:
+  buttonState = digitalRead(buttonPin);
+  
+  if (buttonState == HIGH) {
+   // turn LED on:    
+    digitalWrite(ledPin, HIGH); 
+  } else {
+    // turn LED off:
+    digitalWrite(ledPin, LOW);
+  }
   // Ping out role.  Repeatedly send the current time
-  //
-
-  if (role == role_ping_out)
-  {
-    // First, stop listening so we can talk.
-    radio.stopListening();
-
-    // Take the time, and send it.  This will block until complete
-    unsigned long time = millis();
-    printf("Now sending %lu...",time);
-    bool ok = radio.write( &time, sizeof(unsigned long) );
-    
-    if (ok)
-      printf("ok...");
-    else
-      printf("failed.\n\r");
-
-    // Now, continue listening
-    radio.startListening();
-
-    // Wait here until we get a response, or timeout (250ms)
-    unsigned long started_waiting_at = millis();
-    bool timeout = false;
-    while ( ! radio.available() && ! timeout )
-      if (millis() - started_waiting_at > 200 )
-        timeout = true;
-
-    // Describe the results
-    if ( timeout )
-    {
-      printf("Failed, response timed out.\n\r");
-    }
-    else
-    {
-      // Grab the response, compare, and send to debugging spew
-      unsigned long got_time;
-      radio.read( &got_time, sizeof(unsigned long) );
-
-      // Spew it
-      printf("Got response %lu, round-trip delay: %lu\n\r",got_time,millis()-got_time);
-    }
-
-    // Try again 1s later
-    delay(1000);
+  if (role == role_ping_out) {
+    handlePingOut();
   }
 
-  //
   // Pong back role.  Receive each packet, dump it out, and send it back
-  //
-
-  if ( role == role_pong_back )
-  {
-    // if there is data ready
-    if ( radio.available() )
-    {
-      // Dump the payloads until we've gotten everything
-      unsigned long got_time;
-      bool done = false;
-      while (!done)
-      {
-        // Fetch the payload, and see if this was the last one.
-        done = radio.read( &got_time, sizeof(unsigned long) );
-
-        // Spew it
-        printf("Got payload %lu...\n",got_time);
-
-	// Delay just a little bit to let the other unit
-	// make the transition to receiver
-	delay(20);
-      }
-
-      // First, stop listening so we can talk
-      radio.stopListening();
-
-      // Send the final one back.
-      radio.write( &got_time, sizeof(unsigned long) );
-      printf("Sent response.\n\r");
-
-      // Now, resume listening so we catch the next packets.
-      radio.startListening();
-    }
+  if ( role == role_pong_back ){
+    handlePongBack();
   }
 
-  //
   // Change roles
-  //
-
-  if ( Serial.available() )
-  {
+  if ( Serial.available() ) {
     char c = toupper(Serial.read());
     if ( c == 'T' && role == role_pong_back )
     {
@@ -223,5 +149,75 @@ void loop(void)
       radio.openReadingPipe(1,pipes[0]);
     }
   }
+}
+
+void handlePingOut() {
+  // First, stop listening so we can talk.
+  radio.stopListening();
+
+  // Take the time, and send it.  This will block until complete
+  unsigned long time = millis();
+  printf("Now sending %lu...",time);
+  bool ok = radio.write( &time, sizeof(unsigned long) );
+  
+  if (ok)
+    printf("ok...");
+  else
+    printf("failed.\n\r");
+
+  // Now, continue listening
+  radio.startListening();
+
+  // Wait here until we get a response, or timeout (250ms)
+  unsigned long started_waiting_at = millis();
+  bool timeout = false;
+  while ( ! radio.available() && ! timeout )
+    if (millis() - started_waiting_at > 200 )
+      timeout = true;
+
+  // Describe the results
+  if ( timeout ){
+    printf("Failed, response timed out.\n\r");
+  } else {
+    // Grab the response, compare, and send to debugging spew
+    unsigned long got_time;
+    radio.read( &got_time, sizeof(unsigned long) );
+
+    // Spew it
+    printf("Got response %lu, round-trip delay: %lu\n\r",got_time,millis()-got_time);
+  }
+
+  // Try again 1s later
+  delay(1000);
+}
+
+void handlePongBack() {
+   // if there is data ready
+  if ( radio.available() ) {
+    // Dump the payloads until we've gotten everything
+    unsigned long got_time;
+    bool done = false;
+    while (!done) {
+      // Fetch the payload, and see if this was the last one.
+      done = radio.read( &got_time, sizeof(unsigned long) );
+
+      // Spew it
+      printf("Got payload %lu...\n",got_time);
+
+	// Delay just a little bit to let the other unit
+	// make the transition to receiver
+	delay(20);
+    }
+
+    // First, stop listening so we can talk
+    radio.stopListening();
+
+    // Send the final one back.
+    radio.write( &got_time, sizeof(unsigned long) );
+    printf("Sent response.\n\r");
+
+    // Now, resume listening so we catch the next packets.
+    radio.startListening();
+      } 
 }
 // vim:cin:ai:sts=2 sw=2 ft=cpp
